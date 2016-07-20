@@ -1123,8 +1123,6 @@ hello world
 
 -------------------------------------------------------------------------------
 
-
-
 **alias**
 
 别名只是换了个名字
@@ -1590,3 +1588,397 @@ Consolidated Inspect
 
 
 
+
+# 列表推导：Comprehensions
+
+-------------------------------------------------------------------------------
+
+erlang的老东西，简单易懂
+
+map
+
+```
+iex> for n <- [1, 2, 3, 4], do: n * n
+[1, 4, 9, 16]
+```
+
+
+匹配filter:
+
+```
+iex> values = [good: 1, good: 2, bad: 3, good: 4]
+iex> for {:good, n} <- values, do: n * n
+[1, 4, 16]
+```
+
+函数filter
+
+```
+iex> multiple_of_3? = fn(n) -> rem(n, 3) == 0 end
+iex> for n <- 0..5, multiple_of_3?.(n), do: n * n
+[0, 9]
+```
+
+多列表推导
+
+```
+iex> for i <- [:a, :b, :c], j <- [1, 2], do:  {i, j}
+[a: 1, a: 2, b: 1, b: 2, c: 1, c: 2]
+```
+
+2进制生成
+
+```
+iex> pixels = <<213, 45, 132, 64, 76, 32, 76, 0, 0, 234, 32, 15>>
+iex> for <<r::8, g::8, b::8 <- pixels>>, do: {r, g, b}
+[{213, 45, 132}, {64, 76, 32}, {76, 0, 0}, {234, 32, 15}]
+
+```
+
+into魔法
+
+```
+iex> for <<c <- " hello world ">>, c != ?\s, into: "", do: <<c>>
+"helloworld"
+```
+
+into 对map也可以用哟
+
+```
+iex> for {key, val} <- %{"a" => 1, "b" => 2}, into: %{}, do: {key, val * val}
+%{"a" => 1, "b" => 4}
+```
+
+# 记号：sigils
+
+-------------------------------------------------------------------------------
+
+记号以(~)开始并跟上一个字符。
+
+正则表达式 ~r
+
+```
+# A regular expression that matches strings which contain "foo" or "bar":
+iex> regex = ~r/foo|bar/
+~r/foo|bar/
+iex> "foo" =~ regex
+true
+iex> "bat" =~ regex
+false
+```
+
+Strings ~s
+
+```
+iex> ~s(this is a string with "double" quotes, not 'single' ones)
+"this is a string with \"double\" quotes, not 'single' ones"
+```
+
+Char lists ~c
+
+```
+iex> ~c(this is a char list containing 'single quotes')
+'this is a char list containing \'single quotes\''
+```
+
+
+Word lists ~w
+
+```
+iex> ~w(foo bar bat)
+["foo", "bar", "bat"]
+
+# 给了a作为后缀代表atom.
+
+iex> ~w(foo bar bat)a
+[:foo, :bar, :bat]
+```
+
+插入符和转义符 大s和小s
+
+```
+iex> ~s(String with escape codes \x26 #{"inter" <> "polation"})
+"String with escape codes & interpolation"
+iex> ~S(String without escape codes \x26 without #{interpolation})
+"String without escape codes \\x26 without \#{interpolation}"
+```
+
+
+用~S编写here doc中的转义字符非常方便
+
+```
+@doc ~S"""
+Converts double-quotes to single-quotes.
+
+## Examples
+
+    iex> convert("\"foo\"")
+    "'foo'"
+
+"""
+def convert(...)
+
+```
+
+自定义记号
+
+下面两种写法相等
+
+```
+iex> 
+sigil_r(<<"foo">>, 'i')
+~r"foo"i
+
+h sigil_r
+```
+
+定义自己的
+
+```
+iex> defmodule MySigils do
+...>   def sigil_i(string, []), do: String.to_integer(string)
+...>   def sigil_i(string, [?n]), do: -String.to_integer(string)
+...> end
+iex> import MySigils
+iex> ~i(13)
+13
+iex> ~i(42)n
+-42
+```
+
+# try, catch and rescue
+
+-------------------------------------------------------------------------------
+
+**Errors**
+
+错误的计算会造成异常，比如原子和数字相加：
+
+```
+iex> :foo + 1
+** (ArithmeticError) bad argument in arithmetic expression
+     :erlang.+(:foo, 1)
+```
+
+通过raise可以直接抛出异常：
+
+```
+iex> raise "oops"
+** (RuntimeError) oops
+
+iex> raise ArgumentError, message: "invalid argument foo"
+** (ArgumentError) invalid argument foo
+
+```
+
+你也可以用defexception来定义自己的异常。
+
+```
+iex> defmodule MyError do
+iex>   defexception message: "default message"
+iex> end
+iex> raise MyError
+** (MyError) default message
+iex> raise MyError, message: "custom message"
+** (MyError) custom message
+```
+
+Errors can be rescued using the try/rescue construct:
+
+```
+try do
+   raise "oops"
+ rescue
+   e in RuntimeError -> e
+ end
+%RuntimeError{message: "oops"}
+```
+
+实际上，Elixir的开发者很少使用try/rescue结构，Elixr一般提供两个版本，一个返回错误，一个抛出异常，异常版本的函数以！结束。比如
+
+```
+File.read "hello"
+File.read! "hello"
+```
+
+这也是ruby来的。
+
+
+**Throws**
+
+
+Throw和Cache一般用于无法在中间给出返回的控制流程，比如：
+
+```
+try do
+   Enum.each -50..50, fn(x) ->
+     if rem(x, 13) == 0, do: throw(x)
+   end
+   "Got nothing"
+ catch
+   x -> "Got #{x}"
+end
+"Got -39"
+```
+
+
+**Exit**
+
+当一个进程退出时，它会发送一个`exit`消息。
+
+```
+iex> spawn_link fn -> exit(1) end
+#PID<0.56.0>
+** (EXIT from #PID<0.56.0>) 1
+```
+
+exit也可以被try catch捕获
+
+```
+try do
+  exit "I am exiting"
+catch
+  :exit, _ -> "not really"
+end
+"not really"
+```
+
+使用try/catch的情况本来就比较少见，用来捕获exit就更少见了。
+
+**After**
+
+After用来在异常发生后清理资源，比如关闭文件。
+
+```
+iex> {:ok, file} = File.open "sample", [:utf8, :write]
+iex> try do
+...>   IO.write file, "olá"
+...>   raise "oops, something went wrong"
+...> after
+...>   File.close(file)
+...> end
+** (RuntimeError) oops, something went wrong
+
+```
+
+有时候你可以少写一个try
+
+```
+iex> defmodule RunAfter do
+...>   def without_even_trying do
+...>     raise "oops"
+...>   after
+...>     IO.puts "cleaning up!"
+...>   end
+...> end
+iex> RunAfter.without_even_trying
+cleaning up!
+** (RuntimeError) oops
+```
+
+Elixir会自动加一个try，当你使用after, rescue, catch的时候。
+
+
+# 类型定义(Typespecs)和行为(behaviours)
+
+-------------------------------------------------------------------------------
+
+Elixir是一门动态类型语言，所有的类型都是在运行时被推导的，尽管这样，Elixir提供了typespecs，主要用来：
+
+
++ 定义用户自定义类型。
++ 指明函数参数了类型，函数原型。
+
+round/1’s typed signature is written as:
+
+```
+round(number) :: integer
+```
+
+::指的时候左边的表达式返回右边的类型，函数原型用@spec来编写。
+
+```
+@spec round(number) :: integer
+def round(number), do: # implementation...
+```
+
+更多内容仔细看[文档](http://elixir-lang.org/docs/stable/elixir/typespecs.html)
+
+例子1
+
+```
+defmodule LousyCalculator do
+  @spec add(number, number) :: {number, String.t}
+  def add(x, y), do: {x + y, "You need a calculator to do that?!"}
+
+  @spec multiply(number, number) :: {number, String.t}
+  def multiply(x, y), do: {x * y, "Jeez, come on!"}
+end
+```
+
+We can use the @type directive in order to declare our own custom type.
+
+```
+defmodule LousyCalculator do
+  @typedoc """
+  Just a number followed by a string.
+  """
+  @type number_with_remark :: {number, String.t}
+
+  @spec add(number, number) :: number_with_remark
+  def add(x, y), do: {x + y, "You need a calculator to do that?"}
+
+  @spec multiply(number, number) :: number_with_remark
+  def multiply(x, y), do: {x * y, "It is like addition on steroids."}
+end
+```
+
+Custom types defined through @type are exported and available outside the module they’re defined in:
+
+
+```
+defmodule QuietCalculator do
+  @spec add(number, number) :: number
+  def add(x, y), do: make_quiet(LousyCalculator.add(x, y))
+
+  @spec make_quiet(LousyCalculator.number_with_remark) :: number
+  defp make_quiet({num, _remark}), do: num
+end
+
+```
+
+**Static code analysis-静态代码分析**
+
+**Behaviours**
+
+用来定义模块API
+
+
+```
+defmodule Parser do
+  @callback parse(String.t) :: any
+  @callback extensions() :: [String.t]
+end
+
+defmodule JSONParser do
+  @behaviour Parser
+
+  def parse(str), do: # ... parse JSON
+  def extensions, do: ["json"]
+end
+
+defmodule YAMLParser do
+  @behaviour Parser
+
+  def parse(str), do: # ... parse YAML
+  def extensions, do: ["yml"]
+end
+
+```
+
+
+# DONE
+
+----
+
+have fun !.
