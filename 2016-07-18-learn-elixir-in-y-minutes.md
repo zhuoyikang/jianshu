@@ -18,6 +18,7 @@ Elixir社区贡献了很多库比如ORM来填补Erlang的各种落后，社区�
 
 + [Awesome Elixir](https://github.com/h4cc/awesome-elixir): 列出了很多好用的Elixir库
 + [官网](http://elixir-lang.org/)
++ [标准库](http://elixir-lang.org/docs/stable/elixir/Kernel.html)
 + [本文Follow的是官网的Getting Started](http://elixir-lang.org/getting-started/introduction.html)
 
 
@@ -825,7 +826,767 @@ iex> Enum.map([1, 2, 3], &(&1 * 2))
 
 -------------------------------------------------------------------------------
 
-x1
-x2
+**可枚举的**
+
+Elixir 提供了enumerables的概念和[the Enum module](http://elixir-lang.org/docs/stable/elixir/Enum.html)
+
+```
+iex> Enum.map([1, 2, 3], fn(x) -> x * 2 end)
+[2, 4, 6]
+
+iex> map = %{a: 1, b: 2}
+iex> Enum.map(map, fn {k, v} -> {k, v * 2} end)
+[a: 2, b: 4]
+```
+
+Range
+
+```
+iex> Enum.map(1..3, fn x -> x * 2 end)
+[2, 4, 6]
+iex> Enum.reduce(1..3, 0, &+/2)
+6
+```
+
+
+*Eager vs Lazy： 立即求值和惰性求值*
+
+Enum中的函数都是立即求值。
+
+```
+iex> odd? = &(rem(&1, 2) != 0)
+#Function<6.80484245/1 in :erl_eval.expr/5>
+iex> Enum.filter(1..3, odd?)
+[1, 3]
+```
+
+**[PipleLine|管道](http://elixir-lang.org/docs/stable/elixir/Kernel.html#%7C%3E/2)**
+
+神奇的小玩意。
+
+```
+1..100_000 |> Enum.map(&(&1 * 3)) |> Enum.filter(odd?) |> Enum.sum
+```
+
+如果不使用管道，上面的代码会变成这样：
+
+```
+# 是不是难以阅读多了。
+Enum.sum(Enum.filter(Enum.map(1..100_000, &(&1 * 3)), odd?))
+```
+
+**Stream**
+
+相对于Enum模块是立即求值，[Stream模块](http://elixir-lang.org/docs/stable/elixir/Stream.html)是惰性求值。
+
+```
+1..100_000 |> Stream.map(&(&1 * 3))
+#Stream<[enum: 1..100000, funs: [#Function<34.16982430/1 in Stream.map/2>]]>
+```
+
+注意上面返回的是一个Stream而不是一个值，这个stream被执行后才返回`值`。
+
+同理
+
+```
+iex> stream = Stream.cycle([1, 2, 3])
+#Function<15.16982430/2 in Stream.cycle/1>
+iex> Enum.take(stream, 10)
+[1, 2, 3, 1, 2, 3, 1, 2, 3, 1]
+
+
+iex> stream = Stream.unfold("hełło", &String.next_codepoint/1)
+#Function<39.75994740/2 in Stream.unfold/2>
+iex> Enum.take(stream, 3)
+["h", "e", "ł"]
+
+```
+
+所以Stream是惰性求值。
+
+# 进程
+
+-------------------------------------------------------------------------------
+
+**spawn**
+
+```
+iex> spawn fn -> 1 + 2 end
+#PID<0.43.0>
+iex> Process.alive?(pid)
+false
+
+
+iex> self()
+#PID<0.41.0>
+iex> Process.alive?(self())
+true
+
+```
+
+
+**send and receive**
+
+```
+ex> send self(), {:hello, "world"}
+{:hello, "world"}
+iex> receive do
+...>   {:hello, msg} -> msg
+...>   {:world, msg} -> "won't match"
+...> end
+"world"
+```
+
+
+超时
+
+```
+iex> receive do
+...>   {:hello, msg}  -> msg
+...> after
+...>   1_000 -> "nothing after 1s"
+...> end
+"nothing after 1s"
+```
+
+
+**Links**
+
+
+spawn_link/1
+
+
+```
+iex> spawn fn -> raise "oops" end
+#PID<0.58.0>
+
+[error] Process #PID<0.58.00> raised an exception
+** (RuntimeError) oops
+    :erlang.apply/2
+```
+
+spawn_link/1之后
+
+``` erlang
+iex> spawn_link fn -> raise "oops" end
+#PID<0.41.0>
+
+** (EXIT from #PID<0.41.0>) an exception was raised:
+    ** (RuntimeError) oops
+        :erlang.apply/2
+```
+
+因为shell会捕获所有异常并将其良好的显示，所以你需要在一个文件中做这个实验。
+
+
+``` erlang
+# spawn.exs
+spawn_link fn -> raise "oops" end
+
+receive do
+  :hello -> "let's wait until the process fails"
+end
+```
+
+```
+$ elixir spawn.exs
+
+** (EXIT from #PID<0.47.0>) an exception was raised:
+    ** (RuntimeError) oops
+        spawn.exs:1: anonymous fn/0 in :elixir_compiler_0.__FILE__/1
+
+```
+
+
+这一次进程失败并且把父进程连累的一起退出了，因为他们link了。
+
+
+**Tasks**
+
+Tasks是一个更上层的模块提供了更好的错误隔离和交互
+
+```
+iex(1)> Task.start fn -> raise "oops" end
+{:ok, #PID<0.55.0>}
+
+15:22:33.046 [error] Task #PID<0.55.0> started from #PID<0.53.0> terminating
+** (RuntimeError) oops
+    (elixir) lib/task/supervised.ex:74: Task.Supervised.do_apply/2
+    (stdlib) proc_lib.erl:239: :proc_lib.init_p_do_apply/3
+Function: #Function<20.90072148/0 in :erl_eval.expr/5>
+    Args: []
+
+```
+
+Instead of spawn/1 and spawn_link/1, we use Task.start/1 and Task.start_link/1 to return {:ok, pid} rather than just the PID. This is what enables Tasks to be used in supervision trees. Furthermore, Task provides convenience functions, like Task.async/1 and Task.await/1, and functionality to ease distribution.
+
+**State**
+
+Erlang状态循环。
+
+```
+defmodule KV do
+  def start_link do
+    Task.start_link(fn -> loop(%{}) end)
+  end
+
+  defp loop(map) do
+    receive do
+      {:get, key, caller} ->
+        send caller, Map.get(map, key)
+        loop(map)
+      {:put, key, value} ->
+        loop(Map.put(map, key, value))
+    end
+  end
+end
+```
+
+
+# IO和文件系统
+
+-------------------------------------------------------------------------------
+
+**The IO module**
+
+```
+iex> IO.puts "hello world"
+hello world
+:ok
+iex> IO.gets "yes or no? "
+yes or no? yes
+"yes\n"
+```
+
+**The File module**
+
+```
+iex> {:ok, file} = File.open "hello", [:write]
+{:ok, #PID<0.47.0>}
+iex> IO.binwrite file, "world"
+:ok
+iex> File.close file
+:ok
+iex> File.read "hello"
+{:ok, "world"}
+```
+
+
+```
+case File.read(file) do
+  {:ok, body}      -> # do something with the `body`
+  {:error, reason} -> # handle the error caused by `reason`
+end
+```
+
+
+```
+{:ok, body} = File.read(file)
+```
+
+
+**Path**
+
+
+```
+iex> Path.join("foo", "bar")
+"foo/bar"
+iex> Path.expand("~/hello")
+"/Users/jose/hello"
+```
+
+**Processes and group leaders**
+
+实际上File.open返回的是一个进程。
+
+```
+iex> {:ok, file} = File.open "hello", [:write]
+{:ok, #PID<0.47.0>}
+```
+
+
+**iodata**
+
+可以直接写列表哟。
+
+```
+iex> IO.puts 'hello world'
+hello world
+:ok
+iex> IO.puts ['hello', ?\s, "world"]
+hello world
+:ok
+
+```
+
+# alias,require and import
+
+-------------------------------------------------------------------------------
+
+
+
+**alias**
+
+别名只是换了个名字
+
+```
+defmodule Math do
+  alias Math.List, as: List
+end
+```
+
+as 可以忽略
+
+一次别名多个
+
+```
+alias MyApp.{Foo, Bar, Baz}
+```
+
+**require**
+
+require和元编程相关。
+
+宏是一些在编译时展开的代码块。想要使用宏必须`require`
+
+```
+iex> Integer.is_odd(3)
+** (CompileError) iex:1: you must require Integer before invoking the macro Integer.is_odd/1
+iex> require Integer
+Integer
+iex> Integer.is_odd(3)
+true
+```
+
+Integer.is_odd/1 is defined as a macro
+
+
++ 模块不需要require。
++ 如果要使用模块中定义的宏则需要require。
+
+
+**import**
+
+和以前的Erlang的导入一样，但是似乎没人用。
+
+```
+iex> import List, only: [duplicate: 2]
+List
+iex> duplicate :ok, 3
+[:ok, :ok, :ok]
+```
+
+也可以按类型来导入
+
+
+```
+import Integer, only: :macros
+import Integer, only: :functions
+```
+
+import是词法域的。
+
+```
+defmodule Math do
+  def some_function do
+    import List, only: [duplicate: 2]
+    duplicate(:ok, 10)
+  end
+end
+```
+
+**use**
+
+use和require的区别:
+
+> use requires the given module and then calls the __using__/1 callback on it allowing the module to inject some code into the current context. 
+> Generally speaking, the following module:
+
+```
+defmodule Example do
+  use Feature, option: :value
+end
+```
+
+is compiled into
+
+```
+defmodule Example do
+  require Feature
+  Feature.__using__(option: :value)
+end
+```
+
+
+**动态调用**
+
+模块放到变量中
+
+```
+iex> mod = :lists
+:lists
+iex> mod.flatten([1, [2], 3])
+[1, 2, 3]
+
+```
+
+模块是可以嵌套的
+
+```
+defmodule Foo do
+  defmodule Bar do
+  end
+end
+
+# 等价
+defmodule Elixir.Foo do
+  defmodule Elixir.Foo.Bar do
+  end
+  alias Elixir.Foo.Bar, as: Bar
+end
+```
+
+# 模块属性
+
+-------------------------------------------------------------------------------
+
+模块属性主要有3个作用:
+
++ 可以给模块添加更多的说明。
++ 可以当成常量使用
++ 编译期间的模块数据临时存储。
+
+
+**作为记号**
+
++ @moduledoc - provides documentation for the current module.
++ @doc - provides documentation for the function or macro that follows the attribute.
++ @behaviour - (notice the British spelling) used for specifying an OTP or user-defined behaviour.
++ @before_compile - provides a hook that will be invoked before the module is compiled. This makes it possible to inject functions inside the module exactly before compilation.
+
+```
+defmodule Math do
+  @moduledoc """
+  Provides math-related functions.
+
+  ## Examples
+
+      iex> Math.sum(1, 2)
+      3
+
+  """
+
+  @doc """
+  Calculates the sum of two numbers.
+  """
+  def sum(a, b), do: a + b
+end
+```
+
+编译后可以通过h查看
+
+```
+$ elixirc math.ex
+$ iex
+
+iex> h Math # Access the docs for the module Math
+...
+iex> h Math.sum # Access the docs for the sum function
+...
+```
+
+
+**作为常量**
+
+```
+defmodule MyServer do
+  @initial_state %{host: "147.0.0.1", port: 3456}
+  IO.inspect @initial_state
+end
+```
+
+使用没有被初始化的常量会造成编译时警告
+
+```
+defmodule MyServer do
+  @unknown
+end
+warning: undefined module attribute @unknown, please remove access to @unknown or explicitly set it before access
+```
+
+**作为临时数据存储**
+
+Plugin允许开发者自定义自己的模块。
+
+```
+defmodule MyPlug do
+  use Plug.Builder
+
+  plug :set_header
+  plug :send_ok
+
+  def set_header(conn, _opts) do
+    put_resp_header(conn, "x-header", "set")
+  end
+
+  def send_ok(conn, _opts) do
+    send(conn, 200, "ok")
+  end
+end
+
+IO.puts "Running MyPlug with Cowboy on http://localhost:4000"
+Plug.Adapters.Cowboy.http MyPlug, []
+```
+
+
+上文中，plug是一个宏，它把每一个请求需要的插件都记录到一个模块变量里，但这需要更多的元编程知识才能看的懂，这里先忽略。
+
+
+# 结构体structs
+
+-------------------------------------------------------------------------------
+
+structs是在map的基础上建立起来的一层抽象。
+
+**定义struct**
+
+```
+iex> defmodule User do
+...>   defstruct name: "John", age: 27
+...> end
+```
+
+使用
+
+```
+iex> %User{}
+%User{age: 27, name: "John"}
+iex> %User{name: "Meg"}
+%User{age: 27, name: "Meg"}
+
+```
+
+
+访问和更新结构体
+
+```
+iex> john = %User{}
+%User{age: 27, name: "John"}
+iex> john.name
+"John"
+iex> meg = %{john | name: "Meg"}
+%User{age: 27, name: "Meg"}
+iex> %{meg | oops: :field}
+** (KeyError) key :oops not found in: %User{age: 27, name: "Meg"}
+```
+
+字段抽取
+
+```
+iex> %User{name: name} = john
+%User{age: 27, name: "John"}
+iex> name
+"John"
+```
+
+struct 差不多就是map
+
+```
+iex> is_map(john)
+true
+iex> john.__struct__
+User
+```
+
+但是为maps实现的协议并没有为struct实现
+
+```
+ex> john = %User{}
+%User{age: 27, name: "John"}
+iex> john[:name]
+** (UndefinedFunctionError) undefined function: User.fetch/2
+iex> Enum.each john, fn({field, value}) -> IO.puts(value) end
+** (Protocol.UndefinedError) protocol Enumerable not implemented for %User{age: 27, name: "John"}
+```
+
+但是因为struct就是map，所以它可以和Map模块很好的一起工作
+
+```
+iex> kurt = Map.put(%User{}, :name, "Kurt")
+%User{age: 27, name: "Kurt"}
+iex> Map.merge(kurt, %User{name: "Takashi"})
+%User{age: 27, name: "Takashi"}
+iex> Map.keys(john)
+[:__struct__, :age, :name]
+
+```
+
+# 协议:Protocals
+
+-------------------------------------------------------------------------------
+
+**protocals基础**
+
+Protocals是elixr实现多态的一种方法，类比Erlang的behavour，golang的interface。
+
+定义一个protocal
+
+```
+defprotocol Blank do
+  @doc "Returns true if data is considered blank/empty"
+  def blank?(data)
+end
+```
+
+实现：
+
+```
+# Integers are never blank
+defimpl Blank, for: Integer do
+  def blank?(_), do: false
+end
+
+# Just empty list is blank
+defimpl Blank, for: List do
+  def blank?([]), do: true
+  def blank?(_),  do: false
+end
+
+# Just empty map is blank
+defimpl Blank, for: Map do
+  # Keep in mind we could not pattern match on %{} because
+  # it matches on all maps. We can however check if the size
+  # is zero (and size is a fast operation).
+  def blank?(map), do: map_size(map) == 0
+end
+
+# Just the atoms false and nil are blank
+defimpl Blank, for: Atom do
+  def blank?(false), do: true
+  def blank?(nil),   do: true
+  def blank?(_),     do: false
+end
+```
+
+使用：
+
+```
+iex> Blank.blank?(0)
+false
+iex> Blank.blank?([])
+true
+iex> Blank.blank?([1, 2, 3])
+false
+```
+
+
+为struct实现protocal
+
+```
+
+defmodule User do
+    defstruct name: "John", age: 27
+end
+
+defimpl Blank, for: User do
+    def blank?(_), do: false
+end
+```
+
+那么就可以了
+
+```
+iex> Blank.blank?(%{})
+true
+iex> Blank.blank?(%User{})
+
+```
+
+**实现any**
+
+
+对所有类型实现protocal可以很快变成一段乱麻，但是庆幸有any这个东西。
+
+```
+defimpl Blank, for: Any do
+  def blank?(_), do: false
+end
+```
+
+Any也就是所有类型的意思。
+
+
+**集成Deriving**
+
+
+```
+defmodule DeriveUser do
+  @derive Blank
+  defstruct name: "john", age: 27
+end
+```
+
+但是这样并没有什么用，还需要fallback to any.
+
+**fallback to any，接口默认值实现**
+
+为protocal定义fall_back_to_any为true
+
+```
+defprotocol Blank do
+  @fallback_to_any true
+  def blank?(data)
+end
+```
+
+这样就可以了。
+
+**内建协议**
+
+Enumerable就是一个协议
+
+```
+iex> Enum.map [1, 2, 3], fn(x) -> x * 2 end
+[2, 4, 6]
+iex> Enum.reduce 1..3, 0, fn(x, acc) -> x + acc end
+6
+```
+
+String.Chars protocol
+
+```
+iex> tuple = {1, 2, 3}
+{1, 2, 3}
+iex> "tuple: #{tuple}"
+** (Protocol.UndefinedError) protocol String.Chars not implemented for {1, 2, 3}
+```
+
+Inspect protocals：这个协议将所有类型转成可读的字符串。
+
+```
+iex> {1, 2, 3}
+{1, 2, 3}
+iex> %User{}
+%User{name: "john", age: 27}
+```
+
+**协议合并：consolidation**
+
+
+在后面的mix中你可以看到如下输出
+
+
+```
+Consolidated String.Chars
+Consolidated Collectable
+Consolidated List.Chars
+Consolidated IEx.Info
+Consolidated Enumerable
+Consolidated Inspect
+
+```
+
+具体不详。
+
 
 
