@@ -169,3 +169,43 @@ mix 是 elixir 工程的构建工具，利用 mix，可以快速方便的创建 
     hello
     Elixir
 
+
+# 环境的系统中运行
+
+-------------------------------------------------------------------------------
+
+总共有三：
+
++ :dev - the one in which Mix tasks (like compile) run by default
++ :test - used by mix test
++ :prod - the one you will use to run your project in production
+
+
+与之相关:
+
+```
+  def project do
+    [app: :sample,
+     version: "0.0.1",
+     elixir: "~> 1.2",
+     build_embedded: Mix.env == :prod,
+     start_permanent: Mix.env == :prod,
+     deps: deps]
+  end
+```
+
+
+也可以这样
+
+```
+$ MIX_ENV=prod mix compile
+```
+
+
+# 探索
+
+-------------------------------------------------------------------------------
+
+```
+mix help
+```
