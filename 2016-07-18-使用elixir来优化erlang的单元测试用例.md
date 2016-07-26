@@ -318,8 +318,63 @@ Randomized with seed 55281
 
 -------------------------------------------------------------------------------
 
-ExUnit是Elixir的单元测试框架，也就是我们刚才小小适用的那个，这个工具非常强大，本文权当抛砖引玉，接下来的功能我也开始去做文档学习了。
+ExUnit是Elixir的单元测试框架，也就是我们刚才小小试用的那个，这个工具非常强大，再演示一个callback功能。
+
+我们常常需要在每一个测试用例开始执行前进行一些初始化，或许是在整个测试用例文件开始执行前进行一些初始化。一般来讲写出来的eunit代码大概是这样。
+
+不得不在每一个函数前增加初始化代码，比如：
+
+```
+a_test() -> 
+    {ok,Pid} =  KV.Registry.start_link(context.test)
+    ... do some logic with pid .
+    ok.
+    
+b_test() -> 
+    {ok,Pid} =  KV.Registry.start_link(context.test)
+    ... do some logic with pid .
+    ok.
+...
+```
+
+
+
+而在ExUnit中你可以这样写:
+
+```
+defmodule KV.RegistryTest do
+  use ExUnit.Case, async: true
+
+  setup do
+    {:ok, registry} = KV.Registry.start_link
+    {:ok, registry: registry}
+  end
+
+  test "spawns buckets", %{registry: registry} do
+    assert KV.Registry.lookup(registry, "shopping") == :error
+
+    KV.Registry.create(registry, "shopping")
+    assert {:ok, bucket} = KV.Registry.lookup(registry, "shopping")
+
+    KV.Bucket.put(bucket, "milk", 1)
+    assert KV.Bucket.get(bucket, "milk") == 1
+  end
+  
+  test "removes buckets on exit", %{registry: registry} do
+    KV.Registry.create(registry, "shopping")
+    {:ok, bucket} = KV.Registry.lookup(registry, "shopping")
+     Agent.stop(bucket)
+     assert KV.Registry.lookup(registry, "shopping") == :error
+   end
+
+end
+```
+
+是不是很方便？
+
+本文权当抛砖引玉，接下来的功能我也开始去做文档学习了。
 
 [ExUnit](http://elixir-lang.org/docs/stable/ex_unit/ExUnit.html)
+
 
 have fun ~.
