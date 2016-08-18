@@ -12,7 +12,9 @@
 + http://techblog.netflix.com/
 + http://blog.loli.io/2016/02/21/spring-cloud-netflix-01/
 
+
 + [Spring Cloud Netflix](http://www.xyuu.cn/spring-cloud-netflix-zhcn.html)
++ [知乎翻译spring cloud文档](https://zhuanlan.zhihu.com/p/21778490)
     
 # Lesson 1: Bootstrapping (Spring Boot 101)
 
